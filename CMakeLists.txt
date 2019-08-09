@@ -17,6 +17,7 @@ set_target_properties(bulkmt unit_tests PROPERTIES
   CXX_STANDARD 14
   CXX_STANDARD_REQUIRED ON 
   COMPILE_OPTIONS "-Wall;-Wpedantic;-Wextra"
+  LINK_FLAGS "-lpthread"
 )
 
 set_target_properties(unit_tests bulkmt PROPERTIES
