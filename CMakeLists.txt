@@ -8,6 +8,7 @@ endif()
 project(bulkmt VERSION 0.0.$ENV{TRAVIS_BUILD_NUMBER})
 
 find_package(Boost COMPONENTS unit_test_framework REQUIRED)
+find_package(Threads)
 
 add_executable(bulkmt main.cpp)
 add_executable(unit_tests unit_tests.cpp)
@@ -23,8 +24,14 @@ set_target_properties(unit_tests bulkmt PROPERTIES
   INCLUDE_DIRECTORIES ${Boost_INCLUDE_DIR}
 )
 
-target_link_libraries(unit_tests
+target_link_libraries(unit_tests 
   ${Boost_LIBRARIES}
+  ${CMAKE_THREADS_LIB_INIT}
+)
+
+target_link_libraries(bulkmt 
+  ${Boost_LIBRARIES}
+  ${CMAKE_THREADS_LIB_INIT}
 )
 
 install(TARGETS bulkmt RUNTIME DESTINATION bin)
