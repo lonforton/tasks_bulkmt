@@ -25,51 +25,82 @@ std::condition_variable cv_logger;
 std::condition_variable cv_file;
 bool quit = false;
 
-void logger(CommandsHandler &commands_handler, std::mutex &cv_m, bool &log_flag, bool &file_flag, std::promise<InfoStruct> &&info)
+std::string parse_command(std::vector<std::string> command)
+{
+  std::ostringstream commands_line;
+
+  if (!command.empty())
+  {
+     std::copy(command.begin(), command.end() - 1,
+               std::ostream_iterator<std::string>(commands_line, " "));
+     commands_line << command.back();
+  }
+
+  return commands_line.str();
+}
+
+void logger(CommandsHandler &commands_handler, std::mutex &cv_m, bool &logger_read, bool &file_read, std::promise<InfoStruct> &&info)
 {
   InfoStruct info_struct;
-  while (!quit)
+  while (!quit || !commands_handler.is_commands_queue_empty())
   {
     std::unique_lock<std::mutex> lk(cv_m);
-    cv_logger.wait(lk, [&log_flag]() { return log_flag || quit; });    
+    cv_logger.wait(lk, [&]() { return (!commands_handler.is_commands_queue_empty() && !logger_read) || quit; });     
+   
+    if(quit && logger_read) 
+      continue;
 
-    std::cout << "bulk: " << commands_handler.get_commands_string() << std::endl;
-    info_struct.commands_counter += commands_handler.get_commands_number();
-    info_struct.blocks_counter += commands_handler.get_blocks_number();    
+    if(!commands_handler.is_commands_queue_empty()) {
+      auto com = commands_handler.get_next_command();
+      std::string commands_string = parse_command(com.first);
 
-    lk.unlock();
-    
-    log_flag = false;
-    if (!log_flag && !file_flag)
-    {
-      commands_handler.clear_commands();
+      std::cout << "bulk: " << commands_string << std::endl;
+      info_struct.commands_counter += com.first.size();
+      info_struct.blocks_counter += com.second ? 1 : 0;
     }
+    
+    logger_read = true;
+    if (file_read)
+    {
+      logger_read = file_read = false;
+      commands_handler.pop_commands_queue();
+    }    
+
   }
   info.set_value(info_struct);
 }
 
-void file_writer(CommandsHandler &commands_handler, std::mutex &cv_m, bool &log_flag, bool &file_flag, std::promise<InfoStruct> &&info)
+void file_writer(CommandsHandler &commands_handler, std::mutex &cv_m, bool &logger_read, bool &file_read, std::promise<InfoStruct> &&info)
 {
   InfoStruct info_struct;
-  while (!quit)
+  while (!quit || !commands_handler.is_commands_queue_empty())
   {
     std::unique_lock<std::mutex> lk(cv_m);
-    cv_file.wait(lk, [&file_flag]() { return file_flag || quit; });
+    cv_file.wait(lk, [&]() { return (!commands_handler.is_commands_queue_empty() && !file_read) || quit; });
 
-    std::ofstream bulk_file;
-    bulk_file.open(commands_handler.get_first_command_timestamp() + "_" + std::to_string(commands_handler.get_unique_file_id()) + ".log");
-    bulk_file << commands_handler.get_commands_string() << std::endl;
-    bulk_file.close();
+    if(quit && file_read) 
+      continue;
 
-    info_struct.commands_counter += commands_handler.get_commands_number();
-    info_struct.blocks_counter += commands_handler.get_blocks_number();  
+    if(!commands_handler.is_commands_queue_empty()) {
+      auto com = commands_handler.get_next_command();
+      std::string commands_string = parse_command(com.first);
 
-    lk.unlock();
+      std::ofstream bulk_file;
+      bulk_file.open(commands_handler.get_first_command_timestamp() + "_" + std::to_string(commands_handler.get_unique_file_id()) + ".log");
+      bulk_file << commands_string << std::endl;
+      bulk_file.close();
 
-    file_flag = false;
-    if (!log_flag && !file_flag)
+      info_struct.commands_counter += com.first.size();
+      info_struct.blocks_counter += com.second ? 1 : 0;
+    }
+
+    //lk.unlock();
+
+    file_read = true;
+    if (logger_read)
     {
-      commands_handler.clear_commands();
+      logger_read = file_read = false;
+      commands_handler.pop_commands_queue();
     }
   }
   info.set_value(info_struct);
