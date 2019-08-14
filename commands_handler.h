@@ -1,5 +1,5 @@
-#ifndef INPUT_HANDLER_H
-#define INPUT_HANDLER_H
+#ifndef COMMANDS_HANDLER_H
+#define COMMANDS_HANDLER_H
 
 #include <fstream>
 #include <chrono>
@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <cctype>
 #include <vector>
+#include <queue>
 
 class CommandsHandler
 {
@@ -16,16 +17,17 @@ public:
     unique_file_id = 0;
   }
 
-  bool is_notify_required(const std::string &input_line)
+  void add_input(const std::string &input_line)
   {
     switch (map_command(input_line))
     {
     case opening_bracket:
       if (++brackets_counter == 1 && _commands.size() > 0)
       {
-        return true;
+        _commands_queue.push(std::make_pair(_commands, block_of_commands));
+        _commands.clear();
+        _notify_required = true;
       }
-      return false;
       break;
 
     case closing_bracket:
@@ -33,9 +35,10 @@ public:
       {
         brackets_counter = 0;
         block_of_commands = true;
-        return true;
+        _commands_queue.push(std::make_pair(_commands, block_of_commands));
+        _commands.clear();
+        _notify_required = true;
       }
-      return false;
       break;
 
     default:
@@ -43,23 +46,17 @@ public:
       {
         first_command_time = std::chrono::system_clock::now();
       }
+
       _commands.push_back(input_line);
 
       if (_commands.size() >= _size_of_block && brackets_counter <= 0)
       {
-        return true;
+        _commands_queue.push(std::make_pair(_commands, block_of_commands));
+        _commands.clear();
+        _notify_required = true;
       }
-      return false;
       break;
     }
-
-    return false;
-  }
-
-  void clear_commands()
-  {
-    _commands.clear();
-    block_of_commands = false;
   }
 
   bool is_first_command() const
@@ -67,20 +64,55 @@ public:
     return _commands.size() == 0;
   }
 
-  uint32_t get_commands_number()
+  bool is_commands_queue_empty() const
   {
-    return _commands.size();
+    return _commands_queue.size() == 0;
   }
 
-  uint32_t get_blocks_number()
+  void pop_commands_queue()
   {
-    if (block_of_commands)
-      return 1;
-
-    return 0;
+    if(!_commands_queue.empty())
+    {
+      _commands_queue.pop();
+    }
   }
 
-  unsigned int get_unique_file_id()
+  bool is_notify_required() const
+  {
+    return _notify_required;
+  }
+
+  void notification_done()
+  {
+    _notify_required = false;
+     block_of_commands = false;
+  }
+
+  std::pair<std::vector<std::string>, bool> get_next_command() const
+  {
+    if(!_commands_queue.empty()) {
+      return _commands_queue.front();
+    }
+
+    return std::pair<std::vector<std::string>, bool>{};
+  }
+
+  uint32_t get_current_commands_counter() const
+  {
+    return _commands_queue.back().first.size();
+  }
+
+  uint32_t get_commands_number() const
+  {
+    return get_next_command().first.size();
+  }
+
+  uint32_t get_blocks_number() const
+  {
+    return _commands_queue.back().second;
+  }
+
+  unsigned int get_unique_file_id() 
   {
     return unique_file_id.exchange(++unique_file_id);
   }
@@ -94,43 +126,24 @@ public:
     return other_command;
   }
 
-  std::string get_commands_string() const
-  {
-    std::ostringstream commands_line;
-
-    if (!_commands.empty())
-    {
-      std::copy(_commands.begin(), _commands.end() - 1,
-                std::ostream_iterator<std::string>(commands_line, " "));
-      commands_line << _commands.back();
-    }
-    return commands_line.str();
-  }
-
   std::string get_first_command_timestamp() const
   {
     auto duration = first_command_time.time_since_epoch();
     return std::to_string(std::chrono::duration_cast<std::chrono::seconds>(duration).count());
   }
 
-  void get_input(const std::string &input_line)
+  void close_input() 
   {
-    if (is_notify_required(input_line))
-    {
-    }
+    add_input(std::string("{"));
+    _notify_required = false;
   }
 
-  void close_input()
-  {
-    get_input(std::string("{"));
-  }
-
-  void get_stream_input(std::istream &is)
+  void get_stream_input(std::istream &is) 
   {
     std::string input_line;
     while (std::getline(is, input_line))
     {
-      get_input(input_line);
+      add_input(input_line);
     }
     close_input();
   }
@@ -148,6 +161,8 @@ private:
   };
   bool block_of_commands = false;
   std::atomic_uint unique_file_id;
+  std::queue< std::pair< std::vector<std::string>, bool> > _commands_queue;
+  bool _notify_required = false;
 };
 
 #endif
