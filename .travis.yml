@@ -1,6 +1,21 @@
 dist: xenial
 language: cpp
-compiler: clang
+
+matrix:
+  include:
+    - os: linux
+      compiler: clang
+      addons:
+        apt:
+          sources:
+          - ubuntu-toolchain-r-test
+          - llvm-toolchain-trusty-7
+          packages: 
+            - clang-7
+            - libstdc++-7-dev
+      env:
+      - MATRIX_EVAL="CC=clang-7 && CXX=clang++-7"
+      
 before_script:
 - sudo apt update
 - sudo apt install libboost-test-dev -y
