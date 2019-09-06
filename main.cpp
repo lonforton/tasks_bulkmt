@@ -5,6 +5,7 @@
 
 #include "bulkmt.h"
 #include "commands_handler.h"
+#include "commands_queue.h"
 
 int main(int argc, char *argv[])
 {
@@ -22,17 +23,18 @@ int main(int argc, char *argv[])
     return 1;
   }
 
-  uint32_t size_of_block = boost::lexical_cast<int>(argv[1]);  
+  size_t size_of_block = boost::lexical_cast<int>(argv[1]);  
 
   CommandsHandler commands_handler(size_of_block);
 
-  std::mutex cv_m;  
+  std::queue<CommandsQueue> logger_queue;
+  std::queue<CommandsQueue> file_queue;
 
-  bool logger_read = false;
-  bool file_read = false;  
+  std::mutex logger_m;  
+  std::mutex file_m;  
 
-  const uint32_t log_threads_counter = 1;
-  const uint32_t file_threads_counter = 2;  
+  const size_t log_threads_counter = 1;
+  const size_t file_threads_counter = 2;  
 
   std::vector<std::thread> threads;
   std::vector<std::future<bulkmt::InfoStruct>> threads_futures;
@@ -40,7 +42,12 @@ int main(int argc, char *argv[])
   {
       std::promise<bulkmt::InfoStruct> promise;
       threads_futures.push_back(promise.get_future());
-      threads.push_back(std::thread((i < log_threads_counter ? bulkmt::logger : bulkmt::file_writer), std::ref(commands_handler), std::ref(cv_m), std::ref(logger_read), std::ref(file_read), std::move(promise)));
+      if(i < log_threads_counter) {
+        threads.emplace_back(std::thread(bulkmt::logger, std::ref(logger_queue), std::ref(logger_m), std::move(promise)));
+      }
+      else {
+        threads.emplace_back(std::thread(bulkmt::file_writer, std::ref(file_queue), std::ref(file_m), std::move(promise)));
+      }
   }
 
   bulkmt::InfoStruct main_info_struct;
@@ -50,15 +57,18 @@ int main(int argc, char *argv[])
   {    
     main_info_struct.lines_counter++; 
     {
-      std::lock_guard<std::mutex> lck(cv_m);
+      std::scoped_lock<std::mutex, std::mutex> lock(logger_m, file_m); 
       commands_handler.add_input(input_line);
     }            
     
     if(commands_handler.is_notify_required()) {
       {
-        std::lock_guard<std::mutex> lck(cv_m);
-        main_info_struct.commands_counter += commands_handler.get_current_commands_counter();
-        main_info_struct.blocks_counter += commands_handler.get_blocks_number();
+        std::scoped_lock<std::mutex, std::mutex> lock(logger_m, file_m); 
+        logger_queue.emplace(std::move(commands_handler.get_commands()));
+        file_queue.emplace(std::move(commands_handler.get_commands()));
+        main_info_struct.commands_counter += commands_handler.get_commands_size();
+        main_info_struct.blocks_counter += 1;
+        commands_handler.clear_commands_queue();        
       }
       bulkmt::cv_logger.notify_one();
       bulkmt::cv_file.notify_one();
@@ -67,11 +77,15 @@ int main(int argc, char *argv[])
   }
 
   {
-    std::lock_guard<std::mutex> lck(cv_m);    
+    std::scoped_lock<std::mutex, std::mutex> lock(logger_m, file_m);    
     commands_handler.close_input();   
-    main_info_struct.commands_counter += commands_handler.get_current_commands_counter();
-    main_info_struct.commands_counter += commands_handler.get_blocks_number();
-
+    auto commands = commands_handler.get_commands();
+    if(!commands.get_command().empty()) {
+      logger_queue.emplace(std::move(commands_handler.get_commands()));
+      file_queue.emplace(std::move(commands_handler.get_commands()));
+      main_info_struct.commands_counter += commands_handler.get_commands_size();
+      main_info_struct.blocks_counter += 1;
+    }
   } 
 
   bulkmt::quit = true; 
