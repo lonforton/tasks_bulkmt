@@ -64,8 +64,8 @@ int main(int argc, char *argv[])
     if(commands_handler.is_notify_required()) {
       {
         std::scoped_lock<std::mutex, std::mutex> lock(logger_m, file_m); 
-        logger_queue.emplace(std::move(commands_handler.get_commands()));
-        file_queue.emplace(std::move(commands_handler.get_commands()));
+        logger_queue.emplace(commands_handler.get_commands());
+        file_queue.emplace(commands_handler.get_commands());
         main_info_struct.commands_counter += commands_handler.get_commands_size();
         main_info_struct.blocks_counter += 1;
         commands_handler.clear_commands_queue();        
