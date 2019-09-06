@@ -9,6 +9,8 @@
 #include <vector>
 #include <queue>
 
+#include "commands_queue.h"
+
 class CommandsHandler
 {
 public:
@@ -24,8 +26,6 @@ public:
     case opening_bracket:
       if (++brackets_counter == 1 && _commands.size() > 0)
       {
-        _commands_queue.push(std::make_pair(_commands, block_of_commands));
-        _commands.clear();
         _notify_required = true;
       }
       break;
@@ -34,9 +34,6 @@ public:
       if (--brackets_counter <= 0)
       {
         brackets_counter = 0;
-        block_of_commands = true;
-        _commands_queue.push(std::make_pair(_commands, block_of_commands));
-        _commands.clear();
         _notify_required = true;
       }
       break;
@@ -51,30 +48,31 @@ public:
 
       if (_commands.size() >= _size_of_block && brackets_counter <= 0)
       {
-        _commands_queue.push(std::make_pair(_commands, block_of_commands));
-        _commands.clear();
         _notify_required = true;
       }
       break;
     }
   }
 
+
+  CommandsQueue get_commands()
+  {   
+    return CommandsQueue(_commands, get_first_command_timestamp(), get_unique_file_id());
+  }
+
+  size_t get_commands_size()
+  {
+    return _commands.size();
+  }
+
+  void clear_commands_queue()
+  {
+     _commands.clear();
+  }
+
   bool is_first_command() const
   {
     return _commands.size() == 0;
-  }
-
-  bool is_commands_queue_empty() const
-  {
-    return _commands_queue.size() == 0;
-  }
-
-  void pop_commands_queue()
-  {
-    if(!_commands_queue.empty())
-    {
-      _commands_queue.pop();
-    }
   }
 
   bool is_notify_required() const
@@ -84,37 +82,17 @@ public:
 
   void notification_done()
   {
-    _notify_required = false;
-     block_of_commands = false;
-  }
-
-  std::pair<std::vector<std::string>, bool> get_next_command() const
-  {
-    if(!_commands_queue.empty()) {
-      return _commands_queue.front();
-    }
-
-    return std::pair<std::vector<std::string>, bool>{};
-  }
-
-  uint32_t get_current_commands_counter() const
-  {
-    return _commands_queue.back().first.size();
-  }
-
-  uint32_t get_commands_number() const
-  {
-    return get_next_command().first.size();
-  }
-
-  uint32_t get_blocks_number() const
-  {
-    return _commands_queue.back().second;
+    _notify_required = false;   
+    update_unique_file_id();
   }
 
   unsigned int get_unique_file_id() 
   {
-    return unique_file_id.exchange(++unique_file_id);
+    return unique_file_id;
+  }
+
+  void update_unique_file_id() {
+     unique_file_id.exchange(++unique_file_id);
   }
 
   uint32_t map_command(const std::string &command) const
@@ -159,9 +137,7 @@ private:
     closing_bracket = 1,
     other_command = 2
   };
-  bool block_of_commands = false;
   std::atomic_uint unique_file_id;
-  std::queue< std::pair< std::vector<std::string>, bool> > _commands_queue;
   bool _notify_required = false;
 };
 
