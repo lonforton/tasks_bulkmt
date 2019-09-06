@@ -81,8 +81,8 @@ int main(int argc, char *argv[])
     commands_handler.close_input();   
     auto commands = commands_handler.get_commands();
     if(!commands.get_command().empty()) {
-      logger_queue.emplace(std::move(commands_handler.get_commands()));
-      file_queue.emplace(std::move(commands_handler.get_commands()));
+      logger_queue.emplace(commands_handler.get_commands());
+      file_queue.emplace(commands_handler.get_commands());
       main_info_struct.commands_counter += commands_handler.get_commands_size();
       main_info_struct.blocks_counter += 1;
     }
