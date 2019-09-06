@@ -11,6 +11,7 @@
 #include <deque>
 
 #include "commands_handler.h"
+#include "commands_queue.h"
 
 namespace bulkmt {
 
@@ -39,71 +40,65 @@ std::string parse_command(std::vector<std::string> command)
   return commands_line.str();
 }
 
-void logger(CommandsHandler &commands_handler, std::mutex &cv_m, bool &logger_read, bool &file_read, std::promise<InfoStruct> &&info)
+void logger(std::queue<CommandsQueue> &queue, std::mutex &cv_m, std::promise<InfoStruct> &&info)
 {
-  InfoStruct info_struct;
-  while (!quit || !commands_handler.is_commands_queue_empty())
-  {
-    std::unique_lock<std::mutex> lk(cv_m);
-    cv_logger.wait(lk, [&]() { return (!commands_handler.is_commands_queue_empty() && !logger_read) || quit; });     
-   
-    if(quit && logger_read) 
-      continue;
+   InfoStruct info_struct;
+   bool commands_queue_empty = false;
+   while (!quit || !commands_queue_empty)
+   {     
+     std::unique_lock<std::mutex> lk(cv_m);
+     cv_logger.wait(lk, [&]() { return (!queue.empty() || quit); });    
+         
+    if(queue.empty()) {
+       commands_queue_empty = true;
+       continue;
+     }     
 
-    if(!commands_handler.is_commands_queue_empty()) {
-      auto com = commands_handler.get_next_command();
-      std::string commands_string = parse_command(com.first);
+     auto com = queue.front().get_command();
+     std::string commands_string = parse_command(com);
+     queue.pop();
 
-      std::cout << "bulk: " << commands_string << std::endl;
-      info_struct.commands_counter += com.first.size();
-      info_struct.blocks_counter += com.second ? 1 : 0;
-    }
-    
-    logger_read = true;
-    if (file_read)
-    {
-      logger_read = file_read = false;
-      commands_handler.pop_commands_queue();
-    }    
+     lk.unlock();
 
-  }
-  info.set_value(info_struct);
+     std::cout << "bulk: " << commands_string << std::endl;
+     info_struct.commands_counter += com.size();   
+     info_struct.blocks_counter += 1;
+     
+   }
+   info.set_value(info_struct);
 }
 
-void file_writer(CommandsHandler &commands_handler, std::mutex &cv_m, bool &logger_read, bool &file_read, std::promise<InfoStruct> &&info)
+void file_writer(std::queue<CommandsQueue> &queue, std::mutex &cv_m, std::promise<InfoStruct> &&info)
 {
-  InfoStruct info_struct;
-  while (!quit || !commands_handler.is_commands_queue_empty())
-  {
-    std::unique_lock<std::mutex> lk(cv_m);
-    cv_file.wait(lk, [&]() { return (!commands_handler.is_commands_queue_empty() && !file_read) || quit; });
+   InfoStruct info_struct;
+   bool commands_queue_empty = false;
+   while (!quit || !commands_queue_empty)
+   {
+     std::unique_lock<std::mutex> lk(cv_m);
+     cv_file.wait(lk, [&]() { return (!queue.empty() || quit); });
+     if(queue.empty()) {
+       commands_queue_empty = true;
+       continue;
+     }
 
-    if(quit && file_read) 
-      continue;
+     auto com = queue.front().get_command();
+     std::string commands_string = parse_command(com);
+          
+     std::string file_name(queue.front().get_first_command_timestamp() + "_" + std::to_string(queue.front().get_unique_file_id()) + ".log");
 
-    if(!commands_handler.is_commands_queue_empty()) {
-      auto com = commands_handler.get_next_command();
-      std::string commands_string = parse_command(com.first);
+     queue.pop();
 
-      std::ofstream bulk_file;
-      bulk_file.open(commands_handler.get_first_command_timestamp() + "_" + std::to_string(commands_handler.get_unique_file_id()) + ".log");
-      bulk_file << commands_string << std::endl;
-      bulk_file.close();
+     lk.unlock();
 
-      info_struct.commands_counter += com.first.size();
-      info_struct.blocks_counter += com.second ? 1 : 0;
-    }
+     std::ofstream bulk_file;
+     bulk_file.open(file_name);
+     bulk_file << commands_string << std::endl;
+     bulk_file.close();
 
-    //lk.unlock();
-
-    file_read = true;
-    if (logger_read)
-    {
-      logger_read = file_read = false;
-      commands_handler.pop_commands_queue();
-    }
-  }
-  info.set_value(info_struct);
+     info_struct.commands_counter += com.size();
+     info_struct.blocks_counter += 1;     
+   }
+   info.set_value(info_struct);
 }
 
 } // namespace bulkmt
