@@ -41,7 +41,7 @@ public:
     default:
       if (is_first_command())
       {
-        first_command_time = std::chrono::system_clock::now();
+        _first_command_time = std::chrono::system_clock::now();
       }
 
       _commands.push_back(input_line);
@@ -57,7 +57,7 @@ public:
 
   CommandsQueue get_commands()
   {   
-    return CommandsQueue(_commands, get_first_command_timestamp(), get_unique_file_id());
+    return CommandsQueue(_commands, get_first_command_time(), get_unique_file_id());
   }
 
   size_t get_commands_size()
@@ -104,16 +104,14 @@ public:
     return other_command;
   }
 
-  std::string get_first_command_timestamp() const
+  std::chrono::time_point<std::chrono::system_clock> get_first_command_time() const
   {
-    auto duration = first_command_time.time_since_epoch();
-    return std::to_string(std::chrono::duration_cast<std::chrono::seconds>(duration).count());
+    return _first_command_time;
   }
 
   void close_input() 
   {
     add_input(std::string("{"));
-    _notify_required = false;
   }
 
   void get_stream_input(std::istream &is) 
@@ -130,7 +128,7 @@ private:
   std::vector<std::string> _commands;
   unsigned int _size_of_block = 0;
   int brackets_counter = 0;
-  std::chrono::time_point<std::chrono::system_clock> first_command_time;
+  std::chrono::time_point<std::chrono::system_clock> _first_command_time;
   enum
   {
     opening_bracket = 0,
