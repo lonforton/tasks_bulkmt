@@ -80,7 +80,7 @@ int main(int argc, char *argv[])
     std::scoped_lock<std::mutex, std::mutex> lock(logger_m, file_m);    
     commands_handler.close_input();   
     auto commands = commands_handler.get_commands();
-    if(!commands.get_command().empty()) {
+    if(!commands.get_command().empty() && commands_handler.is_notify_required()) {
       logger_queue.emplace(commands_handler.get_commands());
       file_queue.emplace(commands_handler.get_commands());
       main_info_struct.commands_counter += commands_handler.get_commands_size();
@@ -88,7 +88,7 @@ int main(int argc, char *argv[])
     }
   } 
 
-  bulkmt::quit = true; 
+  bulkmt::quit.store(true);
 
   bulkmt::cv_logger.notify_all(); 
   bulkmt::cv_file.notify_all();
