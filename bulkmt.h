@@ -24,7 +24,7 @@ struct InfoStruct
 
 std::condition_variable cv_logger;
 std::condition_variable cv_file;
-bool quit = false;
+std::atomic_bool quit = false;
 
 std::string parse_command(std::vector<std::string> command)
 {
@@ -44,10 +44,10 @@ void logger(std::queue<CommandsQueue> &queue, std::mutex &cv_m, std::promise<Inf
 {
    InfoStruct info_struct;
    bool commands_queue_empty = false;
-   while (!quit || !commands_queue_empty)
+   while (!quit.load() || !commands_queue_empty)
    {     
      std::unique_lock<std::mutex> lk(cv_m);
-     cv_logger.wait(lk, [&]() { return (!queue.empty() || quit); });    
+     cv_logger.wait(lk, [&]() { return (!queue.empty() || quit.load()); });    
          
     if(queue.empty()) {
        commands_queue_empty = true;
@@ -72,10 +72,10 @@ void file_writer(std::queue<CommandsQueue> &queue, std::mutex &cv_m, std::promis
 {
    InfoStruct info_struct;
    bool commands_queue_empty = false;
-   while (!quit || !commands_queue_empty)
+   while (!quit.load() || !commands_queue_empty)
    {
      std::unique_lock<std::mutex> lk(cv_m);
-     cv_file.wait(lk, [&]() { return (!queue.empty() || quit); });
+     cv_file.wait(lk, [&]() { return (!queue.empty() || quit.load()); });
      if(queue.empty()) {
        commands_queue_empty = true;
        continue;
